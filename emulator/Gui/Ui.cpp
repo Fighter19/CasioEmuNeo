@@ -34,8 +34,10 @@ DebugUi::DebugUi()
     io.WantCaptureKeyboard=true;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
+/*
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     io.ConfigDockingWithShift = true;
+*/
     io.FontGlobalScale = 1.0;
     
     EmuGloConfig.GetAtlas().AddRanges(io.Fonts->GetGlyphRangesChineseFull());
@@ -56,6 +58,7 @@ DebugUi::DebugUi()
 }
 
 void DebugUi::DockerHelper(){
+#ifdef DOCKING
         //p_open不需要，改成nullptr
     bool* p_open = nullptr;
     static bool opt_fullscreen = true;
@@ -88,6 +91,7 @@ void DebugUi::DockerHelper(){
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), dockspace_flags);
     }
     ImGui::End();
+#endif
 }
 
 void DebugUi::PaintSDL(){
