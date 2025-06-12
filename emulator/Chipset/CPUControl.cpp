@@ -166,9 +166,13 @@ namespace casioemu
 		emulator.chipset.Break();
 	}
 
+	static bool bBranchWorkaround = false;
+
 	// * Branch Instructions
 	void CPU::OP_B()
 	{
+		size_t currentAddress = (reg_csr.raw << 16 | reg_pc.raw) - 4;
+
 		if (impl_hint & H_TI)
 		{
 			reg_csr = impl_operands[1].value;
@@ -176,22 +180,103 @@ namespace casioemu
 		}
 		else
 			reg_pc = impl_operands[1].value;
-		
+	
+		size_t newAddress = (reg_csr.raw << 16 | reg_pc.raw);
+		BasicBlock *bb = CreateBasicBlock(newAddress);
+
+		if (!bBranchWorkaround)
+		{
+			bb->bb_name = CreateLabelName(newAddress);
+			// TODO: Branch is not a branch with link and thus it's equal to a jump
+			// This means we can only jump here if the current basic block is not a function
+
+			Instruction *ins = GetInstruction(currentAddress);
+			if (!ins)
+			{
+				ins = CreateInstruction(currentAddress);
+				ins->code = "goto " + bb->bb_name + ";\n";
+
+				assert(current_basic_block);
+				if (current_basic_block)
+				{
+					BasicBlockAddInstruction(current_basic_block, ins);
+					BasicBlockAppendBasicBlock(current_basic_block, bb);
+				}
+			}
+		}
+
+		current_basic_block = bb;
 	}
 
 	void CPU::OP_BL()
 	{
+		// BL uses 4 opcodes, go back to the start of the instruction
+		size_t currentAddress = (reg_csr.raw << 16 | reg_pc.raw) - 4;
+
+		// Create basic block for incoming function
+		size_t targetAddress = 0;
+		if (impl_hint & H_TI)
+		{
+			targetAddress = impl_operands[1].value << 16;
+			targetAddress |= impl_long_imm;
+		}
+		else
+			targetAddress = impl_operands[1].value;
+		BasicBlock *bb = CreateBasicBlock(targetAddress);
+		MakeBasicBlockFunction(bb);
+
+		Instruction *ins = GetInstruction(currentAddress);
+		if (!ins)
+		{
+			ins = CreateInstruction(currentAddress);
+
+			std::string functionName = CreateFunctionName(targetAddress);
+			bb->bb_name = functionName;
+			// generate a call to the function target like "fun_001234();"
+			ins->code = functionName + "();\n";
+
+			BasicBlock *bb_after_ret = CreateBasicBlock(currentAddress + 4);
+
+			if (current_basic_block)
+			{
+				BasicBlockAddInstruction(current_basic_block, ins);
+				BasicBlockAppendBasicBlock(current_basic_block, bb_after_ret);
+			}
+		}
+
+		// PC will point to the first instruction of the new basic block.
+		// Continue filling there
+		current_basic_block = bb;
+
 		reg_lr = reg_pc;
 		reg_lcsr = reg_csr;
 		if (!stack.empty() && !stack.back().lr_pushed)
 			{}
+		bBranchWorkaround = true;
 		OP_B();
+		bBranchWorkaround = false;
 		stack.push_back({false, 0, reg_csr, reg_pc});
 	}
 
 	// * Miscellaneous Instructions
 	void CPU::OP_RT()
 	{
+		size_t absoluteAddress = (CPU::reg_csr.raw << 16 | CPU::reg_pc.raw) - 2;
+		Instruction *ins = GetInstruction(absoluteAddress);
+
+		if (!ins)
+		{
+			ins = CreateInstruction(absoluteAddress);
+			ins->code = "return;\n";
+			assert(current_basic_block);
+
+			BasicBlockAddInstruction(current_basic_block, ins);
+		}
+
+		// Get the basic block after the return
+		BasicBlock *bb_after_ret = CreateBasicBlock(reg_lcsr.raw << 16 | reg_lr.raw);
+		current_basic_block = bb_after_ret;
+
 		if (stack.empty())
 			{}
 		else

@@ -11,6 +11,31 @@ namespace casioemu
 	// * PUSH/POP Instructions
 	void CPU::OP_PUSH()
 	{
+		size_t currentAddress = (reg_csr.raw << 16 | reg_pc.raw) - 2;
+		Instruction *ins = GetInstruction(currentAddress);
+		if (!ins)
+		{
+			ins = CreateInstruction(currentAddress);
+			ins->code = "push(";
+			if (impl_operands[1].register_size == 2)
+			{
+				ins->code += "e";
+			}
+			else if (impl_operands[1].register_size == 4)
+			{
+				ins->code += "x";
+			}
+
+			if (impl_operands[1].register_index < 16)
+				ins->code += "r" + std::to_string(impl_operands[1].register_index);
+			else
+				assert(false);
+			ins->code += ");\n";
+			assert(current_basic_block);
+
+			BasicBlockAddInstruction(current_basic_block, ins);
+		}
+
 		size_t push_size = impl_operands[1].register_size;
 		if (push_size == 1)
 			push_size = 2;
@@ -95,6 +120,9 @@ namespace casioemu
 					}
 				}
 			}
+			// Get the basic block after the return
+			BasicBlock *bb_after_ret = CreateBasicBlock(reg_csr.raw << 16 | reg_pc.raw);
+			current_basic_block = bb_after_ret;
 			if (!stack.empty() && stack.back().lr_pushed &&
 					stack.back().lr_push_address == oldsp)
 				stack.pop_back();

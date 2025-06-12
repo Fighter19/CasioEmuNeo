@@ -7,6 +7,8 @@
 #include <string>
 #include <map>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 
 /**
  * We need to setup break-point system in CPU 
@@ -29,6 +31,48 @@ namespace casioemu
 			std::string name;
 
 			uint16_t raw;
+		};
+
+		struct Instruction
+		{
+			size_t address;
+
+			std::string code;
+			Instruction *next_instruction = nullptr;
+
+			Instruction(size_t address = 0)
+					: address(address) {}
+		};
+
+		struct BasicBlock
+		{
+			// Type of the basic block.
+			// BB_TYPE_FUNCTION takes priority
+			enum
+			{
+				// This type shouldn't exist
+				BB_TYPE_UNKNOWN = 0x0,
+				// When a basic block is found via a branch and link (BL) instruction,
+				BB_TYPE_FUNCTION = 0x1,
+				// When a basic block is found via a branch instruction (B)
+				BB_TYPE_BRANCH = 0x2,
+			} type;
+
+			// Absolute address (CSR << 16 | PC) of the block.
+			size_t address;
+			std::string bb_name;
+
+			// A basic block is a block of continuous code that is executed.
+			// It ends when a branch instruction is executed.
+			// It also means that this is the target of a branch instruction.
+			Instruction *first_instruction = nullptr;
+			Instruction *last_instruction = nullptr;
+
+			// If this is a function, points to the first basic block
+			BasicBlock *first_basic_block = nullptr;
+			BasicBlock *last_basic_block = nullptr;
+			BasicBlock(size_t address)
+					: type(BB_TYPE_BRANCH), address(address) {}
 		};
 
 		template<typename value_type>
@@ -131,6 +175,124 @@ namespace casioemu
 		reg8_t reg_epsw[4], &reg_psw;
 		reg16_t reg_sp, reg_ea;
 		reg8_t reg_dsr;
+
+		// CSR << 16 | PC to BasicBlock map.
+		std::map<size_t, BasicBlock*> basic_blocks;
+		std::map<size_t, Instruction*> instructions;
+		BasicBlock *current_basic_block = nullptr;
+
+		BasicBlock *GetBasicBlock(size_t address)
+		{
+			auto it = basic_blocks.find(address);
+			if (it != basic_blocks.end())
+				return it->second;
+			return nullptr;
+		}
+
+		BasicBlock *CreateBasicBlock(size_t address)
+		{
+			BasicBlock *bb = GetBasicBlock(address);
+			if (bb == nullptr)
+			{
+				bb = new BasicBlock(address);
+				basic_blocks[address] = bb;
+			}
+			return bb;
+		}
+
+		/** Add an instruction to a basic block.
+		 * If the basic block is empty, the instruction will be the first and last
+		 * instruction in the block.
+		 */
+		void BasicBlockAddInstruction(BasicBlock *bb, Instruction *instruction)
+		{
+			if (bb->first_instruction == nullptr)
+			{
+				bb->first_instruction = instruction;
+				bb->last_instruction = instruction;
+			}
+			else
+			{
+				bb->last_instruction->next_instruction = instruction;
+				bb->last_instruction = instruction;
+			}
+		}
+
+		void BasicBlockAppendBasicBlock(BasicBlock *bb, BasicBlock *next_bb)
+		{
+			if (bb->last_basic_block == nullptr)
+			{
+				bb->first_basic_block = next_bb;
+				bb->last_basic_block = next_bb;
+			}
+			else
+			{
+				bb->last_basic_block->last_basic_block = next_bb;
+				bb->last_basic_block = next_bb;
+			}
+		}
+
+		Instruction *GetInstruction(size_t address)
+		{
+			auto it = instructions.find(address);
+			if (it != instructions.end())
+				return it->second;
+			return nullptr;
+		}
+
+		Instruction *CreateInstruction(size_t address)
+		{
+			Instruction *instruction = GetInstruction(address);
+			if (instruction == nullptr)
+			{
+				instruction = new Instruction();
+				instruction->address = address;
+				instructions[address] = instruction;
+			}
+			return instruction;
+		}
+
+		void MakeBasicBlockFunction(BasicBlock *bb)
+		{
+			bb->type = BasicBlock::BB_TYPE_FUNCTION;
+		}
+
+		std::string CreateFunctionName(size_t address)
+		{
+			std::ostringstream output;
+			output << "fun_" << std::hex << std::setfill('0') << std::uppercase
+				<< std::setw(6) << address;
+			return output.str();
+		}
+
+		std::string CreateLabelName(size_t address)
+		{
+			std::ostringstream output;
+			output << "label_" << std::hex << std::setfill('0') << std::uppercase
+				<< std::setw(6) << address;
+			return output.str();
+		}
+
+		std::string PrintAllBasicBlocks() const
+		{
+			std::ostringstream output;
+			for (const auto &pair : basic_blocks)
+			{
+				const BasicBlock *bb = pair.second;
+				output << "Basic Block at " << std::hex << std::setfill('0') << std::uppercase
+					<< std::setw(6) << bb->address << ": " << bb->bb_name << "\n";
+				if (bb->first_instruction)
+				{
+					output << "  Instructions:\n";
+					for (Instruction *ins = bb->first_instruction; ins; ins = ins->next_instruction)
+					{
+						output << "    " << std::hex << std::setfill('0') << std::uppercase
+							<< std::setw(6) << ins->address << ": " << ins->code;
+					}
+				}
+			}
+			return output.str();
+		}
 
 		void SetMemoryModel(MemoryModel memory_model);
 		void Next();
@@ -278,3 +440,15 @@ namespace casioemu
 	};
 }
 
+#include <iostream>
+extern "C"
+{
+	static void PrintAllBasicBlocks(casioemu::CPU *cpu)
+	{
+		if (cpu)
+		{
+			std::string output = cpu->PrintAllBasicBlocks();
+			std::cout << output;
+		}
+	}
+}
