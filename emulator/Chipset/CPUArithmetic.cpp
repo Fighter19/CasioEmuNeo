@@ -64,12 +64,41 @@ namespace casioemu
 		ZSCheck();
 
 		impl_operands[0].value = (impl_operands[0].value << 8) | op_low_0;
+		if (current_basic_block)
+		{
+			size_t currentAddress = (reg_csr.raw << 16 | reg_pc.raw) - 2;
+			Instruction *ins = GetInstruction(currentAddress);
+			if (!ins)
+			{
+				ins = CreateInstruction(currentAddress);
+				ins->code = "mov16(";
+				ins->code += impl_operands[0].PrintOperand();
+				ins->code += ", " + impl_operands[1].PrintOperand();
+				ins->code += ");\n";
+				BasicBlockAddInstruction(current_basic_block, ins);
+			}
+		}
 	}
 
 	void CPU::OP_MOV()
 	{
 		impl_operands[0].value = impl_operands[1].value & 0xFF;
 		ZSCheck();
+		if (current_basic_block)
+		{
+			size_t currentAddress = (reg_csr.raw << 16 | reg_pc.raw) - 2;
+			Instruction *ins = GetInstruction(currentAddress);
+			if (!ins)
+			{
+				ins = CreateInstruction(currentAddress);
+				ins->code = "mov(";
+				ins->code += impl_operands[0].PrintOperand();
+				ins->code += ", ";
+				ins->code += impl_operands[1].PrintOperand();
+				ins->code += ");\n";
+				BasicBlockAddInstruction(current_basic_block, ins);
+			}
+		}
 	}
 
 	void CPU::OP_OR()

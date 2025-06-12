@@ -128,9 +128,40 @@ namespace casioemu
 		uint8_t impl_flags_changed, impl_flags_out, impl_flags_in;
 		uint8_t impl_shift_buffer;
 		uint16_t impl_opcode, impl_long_imm;
-		struct {
+
+		static std::string uint64_to_hex(uint64_t value)
+		{
+			std::ostringstream output;
+			output << "0x" << std::hex << value;
+			return output.str();
+		}
+
+		struct Operand {
 			uint64_t value;
 			size_t register_index, register_size;
+			std::string PrintOperand() const
+			{
+				std::string output;
+				switch (register_size)
+				{
+				case 0:
+					output = uint64_to_hex(value);
+					break;
+				case 1:
+					output = "r" + std::to_string(register_index) + " /*" + uint64_to_hex((uint8_t)value) + "*/";
+					break;
+				case 2:
+					output = "er" + std::to_string(register_index) + " /*" + uint64_to_hex((uint16_t)value) + "*/";
+					break;
+				case 4:
+					output = "xr" + std::to_string(register_index) + " /*" + uint64_to_hex(value) + "*/";
+					break;
+				default:
+					output = "unknown register size " + std::to_string(register_size);
+					break;
+				}
+				return output;
+			}
 		} impl_operands[2];
 		size_t impl_hint;
 		uint16_t impl_csr_mask;
