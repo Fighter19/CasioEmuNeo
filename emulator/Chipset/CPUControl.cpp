@@ -180,12 +180,12 @@ namespace casioemu
 		}
 		else
 			reg_pc = impl_operands[1].value;
-	
-		size_t newAddress = (reg_csr.raw << 16 | reg_pc.raw);
-		BasicBlock *bb = CreateBasicBlock(newAddress);
 
 		if (!bBranchWorkaround)
 		{
+			size_t newAddress = (reg_csr.raw << 16 | reg_pc.raw);
+			BasicBlock *bb = CreateBasicBlock(newAddress);
+
 			bb->bb_name = CreateLabelName(newAddress);
 			// TODO: Branch is not a branch with link and thus it's equal to a jump
 			// This means we can only jump here if the current basic block is not a function
@@ -203,9 +203,8 @@ namespace casioemu
 					BasicBlockAppendBasicBlock(current_basic_block, bb);
 				}
 			}
+			current_basic_block = bb;
 		}
-
-		current_basic_block = bb;
 	}
 
 	void CPU::OP_BL()
@@ -235,12 +234,9 @@ namespace casioemu
 			// generate a call to the function target like "fun_001234();"
 			ins->code = functionName + "();\n";
 
-			BasicBlock *bb_after_ret = CreateBasicBlock(currentAddress + 4);
-
 			if (current_basic_block)
 			{
 				BasicBlockAddInstruction(current_basic_block, ins);
-				BasicBlockAppendBasicBlock(current_basic_block, bb_after_ret);
 			}
 		}
 
